@@ -711,6 +711,7 @@ export default function GoogleMapsZoneManager() {
             <h1 className="text-xl font-bold text-gray-900">Zone Manager Demo</h1>
           </div>
           <p className="text-sm text-gray-600">Example showcasing how to create zones on a map.</p>
+          <a className='text-sm text-blue-500 hover:underline' href='https://github.com/davidrchand/zoning-example' target='_blank'>View Demo Code on Github</a>
         </div>
 
         {/* Controls */}
