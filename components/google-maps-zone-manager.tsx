@@ -135,6 +135,12 @@ export default function GoogleMapsZoneManager() {
    */
   const zonesRef = useRef<Zone[]>([]);
 
+  /** 
+   * Reference to track if the info window was opened by click (persistent) vs hover
+   * When opened by click, it should stay open until explicitly closed
+   */
+  const infoWindowClickedRef = useRef<boolean>(false);
+
   // ========================================================================
   // STATE - Component state management
   // ========================================================================
@@ -214,6 +220,112 @@ export default function GoogleMapsZoneManager() {
     return `Zone ${nextNumber}`;
   };
 
+  /**
+   * Shows the info window for a zone at the center of the polygon
+   * @param zone - The zone to show info for
+   * @param polygon - The polygon associated with the zone
+   * @param isClickOpened - Whether this was opened by a click (makes it persistent)
+   */
+  const showZoneInfoWindow = useCallback((zone: Zone, polygon: google.maps.Polygon, isClickOpened: boolean = false) => {
+    if (!infoWindowRef.current) return;
+
+    // Get the most up-to-date zone data from the ref
+    const currentZone = zonesRef.current.find(z => z.id === zone.id) || zone;
+
+    // Calculate the center of the polygon to position the info window
+    const bounds = new google.maps.LatLngBounds();
+    const path = polygon.getPath();
+    path.forEach((latLng: google.maps.LatLng) => {
+      bounds.extend(latLng);
+    });
+    const center = bounds.getCenter();
+
+    // Create HTML content for the info window with inline styles for reliability
+    const content = `
+      <div class="p-3 min-w-[220px]">
+          <h3 class="font-semibold text-sm text-gray-900 mb-1">${currentZone.name}</h3>
+        ${currentZone.description ? `<p class="text-xs text-gray-600 mt-1 mb-3">${currentZone.description}</p>` : '<div class="mb-3"></div>'}
+        <div class="flex items-center gap-2 mb-3">
+          <div style="width: 12px; height: 12px; background-color: ${currentZone.color}; border-radius: 2px; border: 1px solid rgba(0,0,0,0.2);"></div>
+          <span class="text-xs text-gray-500">${new Date(currentZone.createdAt).toLocaleDateString()}</span>
+        </div>
+        <div class="flex gap-2">
+          <button 
+            id="edit-zone-${currentZone.id}" 
+            class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors cursor-pointer border-0"
+            style="outline: none;"
+          >
+            Edit
+          </button>
+          <button 
+            id="delete-zone-${currentZone.id}" 
+            class="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors cursor-pointer border-0"
+            style="outline: none;"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    `;
+
+    // Set the click opened flag
+    infoWindowClickedRef.current = isClickOpened;
+
+    // Set content and position, then open the info window
+    infoWindowRef.current.setContent(content);
+    infoWindowRef.current.setPosition(center);
+    infoWindowRef.current.open(mapInstanceRef.current);
+
+    // Add click event listeners to the buttons inside the info window
+    // We use setTimeout to ensure the DOM elements are rendered first
+    setTimeout(() => {
+      const editButton = document.getElementById(`edit-zone-${currentZone.id}`);
+      const deleteButton = document.getElementById(`delete-zone-${currentZone.id}`);
+      const closeButton = document.getElementById(`close-info-${currentZone.id}`);
+
+      if (editButton) {
+        editButton.addEventListener('click', () => {
+          // Open edit modal with current zone data
+          setSelectedZone(currentZone);
+          setEditForm({
+            name: currentZone.name,
+            description: currentZone.description,
+            color: currentZone.color,
+          });
+          setIsEditModalOpen(true);
+          // Close info window
+          if (infoWindowRef.current) {
+            infoWindowRef.current.close();
+            infoWindowClickedRef.current = false;
+          }
+        });
+      }
+
+      if (deleteButton) {
+        deleteButton.addEventListener('click', () => {
+          // Show confirmation dialog and delete if confirmed
+          if (confirm(`Are you sure you want to delete "${currentZone.name}"?`)) {
+            handleDeleteZoneCallback(currentZone.id);
+          }
+          // Close info window
+          if (infoWindowRef.current) {
+            infoWindowRef.current.close();
+            infoWindowClickedRef.current = false;
+          }
+        });
+      }
+
+      if (closeButton) {
+        closeButton.addEventListener('click', () => {
+          if (infoWindowRef.current) {
+            infoWindowRef.current.close();
+            infoWindowClickedRef.current = false;
+          }
+        });
+      }
+    }, 100);
+  }, []);
+
   // ========================================================================
   // EVENT HANDLERS AND CALLBACKS
   // ========================================================================
@@ -227,115 +339,29 @@ export default function GoogleMapsZoneManager() {
    */
   const addPolygonListeners = useCallback((polygon: google.maps.Polygon, zone: Zone) => {
 
-    // HOVER EVENT: Show info window when mouse enters polygon
+    // HOVER EVENT: Show info window when mouse enters polygon (only if not clicked open)
     google.maps.event.addListener(polygon, 'mouseover', (event: google.maps.KmlMouseEvent) => {
-      // Only show hover info if we're not currently editing any zone
-      if (!editingZoneId && infoWindowRef.current) {
-
-        // Get the most up-to-date zone data from the ref
-        const currentZone = zonesRef.current.find(z => z.id === zone.id) || zone;
-
-        // Calculate the center of the polygon to position the info window
-        const bounds = new google.maps.LatLngBounds();
-        const path = polygon.getPath();
-        path.forEach((latLng: google.maps.LatLng) => {
-          bounds.extend(latLng);
-        });
-        const center = bounds.getCenter();
-
-        // Create HTML content for the info window with inline styles for reliability
-        const content = `
-          <div class="p-3 min-w-[220px]">
-            <h3 class="font-semibold text-sm text-gray-900 mb-1">${currentZone.name}</h3>
-            ${currentZone.description ? `<p class="text-xs text-gray-600 mt-1 mb-3">${currentZone.description}</p>` : '<div class="mb-3"></div>'}
-            <div class="flex items-center gap-2 mb-3">
-              <div style="width: 12px; height: 12px; background-color: ${currentZone.color}; border-radius: 2px; border: 1px solid rgba(0,0,0,0.2);"></div>
-              <span class="text-xs text-gray-500">${new Date(currentZone.createdAt).toLocaleDateString()}</span>
-            </div>
-            <div class="flex gap-2">
-              <button 
-                id="edit-zone-${currentZone.id}" 
-                class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors cursor-pointer border-0"
-                style="outline: none;"
-              >
-                Edit
-              </button>
-              <button 
-                id="delete-zone-${currentZone.id}" 
-                class="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors cursor-pointer border-0"
-                style="outline: none;"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        `;
-
-        // Set content and position, then open the info window
-        infoWindowRef.current.setContent(content);
-        infoWindowRef.current.setPosition(center);
-        infoWindowRef.current.open(mapInstanceRef.current);
-
-        // Add click event listeners to the buttons inside the info window
-        // We use setTimeout to ensure the DOM elements are rendered first
-        setTimeout(() => {
-          const editButton = document.getElementById(`edit-zone-${currentZone.id}`);
-          const deleteButton = document.getElementById(`delete-zone-${currentZone.id}`);
-
-          if (editButton) {
-            editButton.addEventListener('click', () => {
-              // Open edit modal with current zone data
-              setSelectedZone(currentZone);
-              setEditForm({
-                name: currentZone.name,
-                description: currentZone.description,
-                color: currentZone.color,
-              });
-              setIsEditModalOpen(true);
-              // Close info window
-              if (infoWindowRef.current) {
-                infoWindowRef.current.close();
-              }
-            });
-          }
-
-          if (deleteButton) {
-            deleteButton.addEventListener('click', () => {
-              // Show confirmation dialog and delete if confirmed
-              if (confirm(`Are you sure you want to delete "${currentZone.name}"?`)) {
-                handleDeleteZoneCallback(currentZone.id);
-              }
-              // Close info window
-              if (infoWindowRef.current) {
-                infoWindowRef.current.close();
-              }
-            });
-          }
-        }, 100);
+      // Only show hover info if we're not currently editing any zone and info window wasn't opened by click
+      if (!editingZoneId && !infoWindowClickedRef.current) {
+        showZoneInfoWindow(zone, polygon, false);
       }
     });
 
-    // MOUSE OUT EVENT: Hide info window when mouse leaves polygon
+    // MOUSE OUT EVENT: Hide info window when mouse leaves polygon (only if not clicked open)
     google.maps.event.addListener(polygon, 'mouseout', () => {
-      if (!editingZoneId && infoWindowRef.current) {
+      if (!editingZoneId && !infoWindowClickedRef.current && infoWindowRef.current) {
         infoWindowRef.current.close();
       }
     });
 
-    // CLICK EVENT: Open edit modal when polygon is clicked (but not when editing)
+    // CLICK EVENT: Show persistent info window when polygon is clicked
     google.maps.event.addListener(polygon, 'click', () => {
       if (!editingZoneId) {
-        const currentZone = zonesRef.current.find(z => z.id === zone.id) || zone;
-        setSelectedZone(currentZone);
-        setEditForm({
-          name: currentZone.name,
-          description: currentZone.description,
-          color: currentZone.color,
-        });
-        setIsEditModalOpen(true);
+        showZoneInfoWindow(zone, polygon, true);
       }
     });
-  }, [editingZoneId]);
+
+  }, [editingZoneId, showZoneInfoWindow]);
 
   /**
    * Delete zone function that can be safely used in callbacks
@@ -523,11 +549,18 @@ export default function GoogleMapsZoneManager() {
             ],
           });
 
-
           mapInstanceRef.current = map;
 
           // Initialize InfoWindow for displaying zone information on hover
           infoWindowRef.current = new google.maps.InfoWindow();
+
+          // Add click listener to the map to close info window when clicking elsewhere
+          google.maps.event.addListener(map, 'click', () => {
+            if (infoWindowRef.current && infoWindowClickedRef.current) {
+              infoWindowRef.current.close();
+              infoWindowClickedRef.current = false;
+            }
+          });
 
           // Initialize Drawing Manager for creating new polygons
           const drawingManager = new google.maps.drawing.DrawingManager({
@@ -689,6 +722,7 @@ export default function GoogleMapsZoneManager() {
           // Close any open info windows
           if (infoWindowRef.current) {
             infoWindowRef.current.close();
+            infoWindowClickedRef.current = false;
           }
         } else {
           // Start editing this zone
@@ -710,6 +744,7 @@ export default function GoogleMapsZoneManager() {
           // Close info window while editing (dragging points would interfere)
           if (infoWindowRef.current) {
             infoWindowRef.current.close();
+            infoWindowClickedRef.current = false;
           }
         }
       }
@@ -979,8 +1014,8 @@ export default function GoogleMapsZoneManager() {
             <Button
               onClick={isDrawing ? stopDrawing : startDrawing}
               className={`w-full h-11 font-medium transition-all ${isDrawing
-                  ? 'bg-red-600 hover:bg-red-700 shadow-md'
-                  : 'bg-blue-600 hover:bg-blue-700 shadow-md hover:shadow-lg'
+                ? 'bg-red-600 hover:bg-red-700 shadow-md'
+                : 'bg-blue-600 hover:bg-blue-700 shadow-md hover:shadow-lg'
                 }`}
             >
               {isDrawing ? <X className="h-4 w-4 mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
@@ -1029,8 +1064,8 @@ export default function GoogleMapsZoneManager() {
                   <div
                     key={zone.id}
                     className={`p-3 lg:p-4 border rounded-xl transition-all hover:shadow-md ${editingZoneId === zone.id
-                        ? 'border-blue-300 bg-blue-50'
-                        : 'border-gray-200 bg-white hover:border-gray-300'
+                      ? 'border-blue-300 bg-blue-50'
+                      : 'border-gray-200 bg-white hover:border-gray-300'
                       }`}
                   >
                     <div className="flex items-start justify-between">
@@ -1089,8 +1124,8 @@ export default function GoogleMapsZoneManager() {
                           size="sm"
                           variant={editingZoneId === zone.id ? "default" : "outline"}
                           className={`h-8 w-8 p-0 ${editingZoneId === zone.id
-                              ? 'bg-blue-600 text-white'
-                              : 'hover:bg-blue-50 hover:text-blue-600'
+                            ? 'bg-blue-600 text-white'
+                            : 'hover:bg-blue-50 hover:text-blue-600'
                             }`}
                           onClick={() => toggleZoneEditMode(zone.id)}
                         >
