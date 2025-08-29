@@ -20,7 +20,7 @@ Create a `.env.local` file in the root of the project with the following:
 
 ```bash
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=YOUR_API_KEY_HERE
-```
+````
 
 ---
 
@@ -69,6 +69,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser to view the 
 ## 📂 Project Structure
 
 * `app/page.tsx` → Main map + zone manager UI
+* `components/google-maps-zone-manager.tsx` → **Core code for the Google Maps zone manager**
 * `components/ui/*` → Reusable UI elements (buttons, inputs, dialogs)
 * `types/zone.ts` → Zone type definitions
 * `utils/storage.ts` → Save/load/delete zones from localStorage

@@ -1,4 +1,4 @@
-import GoogleMapsZoneManager from './google-maps-zone-manager';
+import GoogleMapsZoneManager from '@/components/google-maps-zone-manager';
 
 export default function Home() {
   return (
