@@ -875,7 +875,7 @@ export default function GoogleMapsZoneManager() {
           </DialogHeader>
           <div className="space-y-6">
             <p className="text-gray-600">
-              Here's how to draw a zone on the map:
+              Here&apos;s how to draw a zone on the map:
             </p>
             <ol className="list-decimal list-inside space-y-3 text-gray-700">
               <li className="flex items-start gap-2">
